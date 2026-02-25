@@ -9,7 +9,7 @@ function Login({ onLogin }) {
 
   const handleLogin = async () => {
     try {
-      const res = await axios.post('http://localhost:3001/login', { username, password });
+      const res = await axios.post('http://localhost:3001/auth/login', { username, password });
       onLogin(res.data.user);
     } catch (err) {
       setError('نام کاربری یا رمز اشتباه است');
