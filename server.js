@@ -38,6 +38,23 @@ const all = (sql, params = []) =>
     });
   });
 
+
+const parseBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'بله'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'خیر'].includes(normalized)) return false;
+  }
+  return false;
+};
+
+const parseInteger = (value, defaultValue = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
+};
+
 const initializeDatabase = async () => {
   await run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,6 +164,11 @@ app.post('/users', authenticate, authorize('admin'), async (req, res) => {
       return res.status(400).json({ message: 'نام کاربری، رمز عبور و نقش الزامی است.' });
     }
 
+    const allowedRoles = ['admin', 'operator', 'viewer'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'نقش کاربر نامعتبر است.' });
+    }
+
     const hash = await bcrypt.hash(password, 10);
     const result = await run('INSERT INTO users(username, password, role) VALUES(?, ?, ?)', [
       username,
@@ -188,7 +210,7 @@ const buildWhereClause = (query) => {
     if (query[queryKey] !== undefined && query[queryKey] !== '') {
       if (['requested_count', 'received_status', 'delivered_count'].includes(queryKey)) {
         conditions.push(`${column} = ?`);
-        params.push(Number(query[queryKey]));
+        params.push(parseInteger(query[queryKey], 0));
       } else {
         conditions.push(`${column} LIKE ?`);
         params.push(`%${query[queryKey]}%`);
@@ -250,9 +272,9 @@ app.post('/records', authenticate, authorize('admin', 'operator'), async (req, r
         payload.proforma_number || '',
         payload.referral_direction || '',
         payload.parliament_representative || '',
-        Number(payload.requested_count || 0),
-        payload.received_status ? 1 : 0,
-        Number(payload.delivered_count || 0),
+        parseInteger(payload.requested_count, 0),
+        parseBoolean(payload.received_status) ? 1 : 0,
+        parseInteger(payload.delivered_count, 0),
         payload.received_letter_date || '',
         payload.received_letter_number || '',
         payload.pmq || '',
@@ -325,9 +347,9 @@ app.put('/records/:id', authenticate, authorize('admin', 'operator'), async (req
         payload.proforma_number || '',
         payload.referral_direction || '',
         payload.parliament_representative || '',
-        Number(payload.requested_count || 0),
-        payload.received_status ? 1 : 0,
-        Number(payload.delivered_count || 0),
+        parseInteger(payload.requested_count, 0),
+        parseBoolean(payload.received_status) ? 1 : 0,
+        parseInteger(payload.delivered_count, 0),
         payload.received_letter_date || '',
         payload.received_letter_number || '',
         payload.pmq || '',
@@ -389,7 +411,15 @@ app.get('/reports/dashboard', authenticate, async (req, res) => {
       params
     );
 
-    return res.json({ totals, byCenter, byDevice });
+    const safeTotals = {
+      total_records: Number(totals?.total_records || 0),
+      total_requested: Number(totals?.total_requested || 0),
+      total_delivered: Number(totals?.total_delivered || 0),
+      total_received: Number(totals?.total_received || 0),
+      total_not_received: Number(totals?.total_not_received || 0),
+    };
+
+    return res.json({ totals: safeTotals, byCenter, byDevice });
   } catch (error) {
     return res.status(500).json({ message: 'خطا در تهیه داشبورد آماری', error: error.message });
   }
